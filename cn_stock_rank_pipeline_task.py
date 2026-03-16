@@ -299,12 +299,6 @@ def parse_args() -> argparse.Namespace:
         default=300.0,
         help="Polling timeout seconds for each kronos predict task.",
     )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default=f"task1_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-        help="Output JSON file path.",
-    )
     return parser.parse_args()
 
 
@@ -361,18 +355,16 @@ def main() -> None:
         )
         results.append(symbol_result)
 
-    output = {
-        "task": "task1",
-        "started_at": started,
-        "finished_at": now_str(),
-        "stock_rank": rank_resp,
-        "symbols": symbols,
-        "results": results,
-    }
-    with open(args.output, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
-
-    print(f"saved: {args.output}")
+    finished_at = now_str()
+    analysis_ok = sum(1 for item in results if item.get("analysis", {}).get("ok") is True)
+    profit_ok = sum(
+        1 for item in results if item.get("profit_forecast", {}).get("ok") is True
+    )
+    predict_ok = sum(1 for item in results if item.get("predict_poll", {}).get("ok") is True)
+    print(
+        f"[task1] finished_at={finished_at} total={len(results)} "
+        f"analysis_ok={analysis_ok} profit_ok={profit_ok} predict_ok={predict_ok}"
+    )
 
 
 if __name__ == "__main__":
