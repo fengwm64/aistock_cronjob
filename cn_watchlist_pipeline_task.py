@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -9,7 +10,6 @@ from typing import Any, Dict, List
 
 import requests
 
-STOCK_RANK_URL = "https://extapi.aistocklink.cn/api/cn/market/stockrank/"
 ANALYSIS_URL_TEMPLATE = "https://extapi.aistocklink.cn/api/cn/stocks/{symbol}/analysis"
 PROFIT_FORECAST_URL_TEMPLATE = (
     "https://extapi.aistocklink.cn/api/cn/stock/{symbol}/profit-forecast"
@@ -22,20 +22,25 @@ def now_str() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def fetch_stock_rank() -> Dict[str, Any]:
-    resp = requests.get(STOCK_RANK_URL, timeout=20)
-    resp.raise_for_status()
-    return resp.json()
+def parse_watchlist_from_env(env_var: str) -> List[str]:
+    raw = os.getenv(env_var, "").strip()
+    if not raw:
+        raise RuntimeError(
+            f"Environment variable {env_var} is empty. "
+            f"Expected format: 601669;000617;603986"
+        )
 
+    # Support semicolon-separated watchlist: xxxx;xxxxx;xxxxxx
+    symbols = [part.strip() for part in raw.split(";") if part.strip()]
+    if not symbols:
+        raise RuntimeError(
+            f"No valid symbols found in {env_var}. "
+            f"Expected format: 601669;000617;603986"
+        )
 
-def extract_symbols(stock_rank_resp: Dict[str, Any]) -> List[str]:
-    rank_list = stock_rank_resp.get("data", {}).get("人气榜", [])
-    symbols: List[str] = []
-    for item in rank_list:
-        symbol = str(item.get("股票代码", "")).strip()
-        if symbol:
-            symbols.append(symbol)
-    return symbols
+    # Keep order while removing duplicates
+    deduped = list(dict.fromkeys(symbols))
+    return deduped
 
 
 def run_analysis_sse(symbol: str) -> Dict[str, Any]:
@@ -279,7 +284,13 @@ def run_predict_batches(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Task1: stock rank + analysis/profit + kronos batch predict (multi-thread)."
+        description="Task: watchlist from env + analysis/profit + kronos batch predict (multi-thread)."
+    )
+    parser.add_argument(
+        "--env-var",
+        type=str,
+        default="WATCHLIST_SYMBOLS",
+        help="Environment variable containing semicolon-separated symbols.",
     )
     parser.add_argument(
         "--max-workers",
@@ -302,7 +313,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=str,
-        default=f"task1_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+        default=f"watchlist_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
         help="Output JSON file path.",
     )
     return parser.parse_args()
@@ -312,11 +323,7 @@ def main() -> None:
     args = parse_args()
     started = now_str()
     worker_count = max(2, args.max_workers)
-
-    rank_resp = fetch_stock_rank()
-    symbols = extract_symbols(rank_resp)
-    if not symbols:
-        raise RuntimeError("No symbols extracted from stock rank response.")
+    symbols = parse_watchlist_from_env(args.env_var)
 
     symbol_outputs: Dict[str, Dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
@@ -362,10 +369,10 @@ def main() -> None:
         results.append(symbol_result)
 
     output = {
-        "task": "task1",
+        "task": "watchlist_task",
         "started_at": started,
         "finished_at": now_str(),
-        "stock_rank": rank_resp,
+        "env_var": args.env_var,
         "symbols": symbols,
         "results": results,
     }

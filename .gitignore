@@ -22,3 +22,5 @@ env/
 
 # Task output files
 task1_result_*.json
+
+watchlist_result_*.json
