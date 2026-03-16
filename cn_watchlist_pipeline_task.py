@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,18 +24,41 @@ def now_str() -> str:
 
 
 def parse_watchlist_from_env(env_var: str) -> List[str]:
-    raw = os.getenv(env_var, "").strip()
+    raw = os.getenv(env_var, "")
+    resolved_key = env_var
+    if not str(raw).strip():
+        for key in (env_var.upper(), env_var.lower()):
+            value = os.getenv(key, "")
+            if str(value).strip():
+                raw = value
+                resolved_key = key
+                break
+
+    if not str(raw).strip():
+        # Case-insensitive fallback for environments that normalize key names.
+        for key, value in os.environ.items():
+            if key.lower() == env_var.lower() and str(value).strip():
+                raw = value
+                resolved_key = key
+                break
+
+    raw = str(raw).strip()
     if not raw:
+        similar_keys = sorted(
+            [k for k in os.environ.keys() if "WATCH" in k.upper() or "SYMBOL" in k.upper()]
+        )[:20]
         raise RuntimeError(
             f"Environment variable {env_var} is empty. "
-            f"Expected format: 601669;000617;603986"
+            f"Expected format: 601669;000617;603986. "
+            f"Similar env keys in current process: {similar_keys}"
         )
 
-    # Support semicolon-separated watchlist: xxxx;xxxxx;xxxxxx
-    symbols = [part.strip() for part in raw.split(";") if part.strip()]
+    raw = raw.strip("\"'")
+    # Support separators: ; ； , ， whitespace/newlines
+    symbols = [part.strip() for part in re.split(r"[;；,，\s]+", raw) if part.strip()]
     if not symbols:
         raise RuntimeError(
-            f"No valid symbols found in {env_var}. "
+            f"No valid symbols found in {resolved_key}. "
             f"Expected format: 601669;000617;603986"
         )
 
