@@ -110,7 +110,7 @@ def run_analysis_sse(symbol: str) -> Dict[str, Any]:
 def fetch_profit_forecast(symbol: str) -> Dict[str, Any]:
     def _request() -> Dict[str, Any]:
         url = PROFIT_FORECAST_URL_TEMPLATE.format(symbol=symbol)
-        resp = requests.get(url, timeout=30)
+        resp = requests.post(url, timeout=30)
         resp.raise_for_status()
         return {"ok": True, "status_code": resp.status_code, "data": resp.json()}
 
